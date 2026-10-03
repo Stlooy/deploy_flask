@@ -1,7 +1,7 @@
 import os
 from urllib import response
 from langchain_groq import ChatGroq
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings, HuggingFaceEndpointEmbeddings
 from langchain_community.document_loaders import PyPDFDirectoryLoader, PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
@@ -13,36 +13,52 @@ llm = ChatGroq(model="openai/gpt-oss-120b")
 
 
 
-folder_path = r'E:\freelancing\rag_pipeline\docs'
 
-loader = PyPDFDirectoryLoader(folder_path, glob="moon.pdf",recursive=True)
-docs = loader.load()
-print(f"Loaded {len(docs)} pages")
-
-splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-chunks = splitter.split_documents(docs)
-print(f"Created {len(chunks)} chunks")
 
 
 # embeddings = HuggingFaceEmbeddings(
 #     model_name="sentence-transformers/all-MiniLM-L6-v2"
 # )
-embeddings = HuggingFaceEmbeddings(model_name="paraphrase-multilingual-MiniLM-L12-v2")
+#embeddings = HuggingFaceEmbeddings(model_name="paraphrase-multilingual-MiniLM-L12-v2")
+
+embeddings = HuggingFaceEndpointEmbeddings(
+    model="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+)
 
 
 # Clear any existing collection before creating a new one, so re-running this cell is always safe
-Chroma(embedding_function=embeddings, persist_directory="./chroma_db").delete_collection()
+# Chroma(embedding_function=embeddings, persist_directory="./chroma_db").delete_collection()
 
-vectorstore = Chroma.from_documents(
-    documents=chunks,
-    embedding=embeddings,
-        persist_directory="./chroma_db"
+# vectorstore = Chroma.from_documents(
+#     documents=chunks,
+#     embedding=embeddings,
+#         persist_directory="./chroma_db"
+# )
+
+
+vectorstore = Chroma(
+    embedding_function=embeddings,
+    persist_directory="./chroma_db",
 )
 
-print(f"Vector Database Created Successfully with {vectorstore._collection.count()} chunks")
 
 
 
+if vectorstore._collection.count() == 0:
+
+    loader = PyPDFDirectoryLoader("docs", glob="moon.pdf",recursive=True)
+    docs = loader.load()
+    print(f"Loaded {len(docs)} pages")
+
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    chunks = splitter.split_documents(docs)
+    print(f"Created {len(chunks)} chunks")
+
+    print(f"Vector Database Created Successfully with {vectorstore._collection.count()} chunks")
+
+
+    vectorstore.add_documents(chunks)   # FIX 2: chunks were never saved to the index
+    print(f"Vector Database Created Successfully with {vectorstore._collection.count()} chunks")
 
 retriever = vectorstore.as_retriever(search_kwargs={"k": 6})
 
